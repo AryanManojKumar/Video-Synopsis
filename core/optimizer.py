@@ -9,11 +9,16 @@ class ConflictResolver:
         self.compression_ratio = settings.compression_ratio
         self.grid_rows, self.grid_cols = grid_size
         self.overlap_threshold = overlap_threshold
+        self._zone_cache = {}
         
     def _get_spatial_zones(self, bbox: List[int], frame_width: int, frame_height: int) -> Set[Tuple[int, int]]:
         """Get which grid zones this bbox occupies"""
         if frame_width <= 0 or frame_height <= 0:
             return {(0, 0)}
+        
+        cache_key = (tuple(bbox), frame_width, frame_height)
+        if cache_key in self._zone_cache:
+            return self._zone_cache[cache_key]
         
         x1, y1, x2, y2 = bbox
         
@@ -30,25 +35,46 @@ class ConflictResolver:
             for col in range(max(0, col_start), min(self.grid_cols, col_end + 1)):
                 zones.add((row, col))
         
-        return zones if zones else {(0, 0)}
+        result = zones if zones else {(0, 0)}
+        self._zone_cache[cache_key] = result
+        return result
     
     def _check_collision(self, tube1: Tube, time1: int, 
                         tube2: Tube, time2: int,
                         frame_width: int = 1920, frame_height: int = 1080) -> bool:
         """Check if two tubes collide in both time and space"""
-        for i, bbox1 in enumerate(tube1.bboxes):
-            frame_time1 = time1 + i
-            for j, bbox2 in enumerate(tube2.bboxes):
-                frame_time2 = time2 + j
+        tube1_duration = len(tube1.bboxes)
+        tube2_duration = len(tube2.bboxes)
+        
+        tube1_end = time1 + tube1_duration
+        tube2_end = time2 + tube2_duration
+        
+        # Early exit: no temporal overlap
+        if tube1_end <= time2 or tube2_end <= time1:
+            return False
+        
+        # Find temporal overlap range
+        overlap_start = max(time1, time2)
+        overlap_end = min(tube1_end, tube2_end)
+        
+        # Sample frames in overlap (check every 5th frame for speed)
+        sample_rate = 5
+        for frame_time in range(overlap_start, overlap_end, sample_rate):
+            idx1 = frame_time - time1
+            idx2 = frame_time - time2
+            
+            if 0 <= idx1 < tube1_duration and 0 <= idx2 < tube2_duration:
+                bbox1 = tube1.bboxes[idx1]
+                bbox2 = tube2.bboxes[idx2]
                 
-                if frame_time1 == frame_time2:
-                    zones1 = self._get_spatial_zones(bbox1, frame_width, frame_height)
-                    zones2 = self._get_spatial_zones(bbox2, frame_width, frame_height)
-                    
-                    if zones1 & zones2:
-                        overlap = self._bbox_overlap_ratio(bbox1, bbox2)
-                        if overlap > self.overlap_threshold:
-                            return True
+                zones1 = self._get_spatial_zones(bbox1, frame_width, frame_height)
+                zones2 = self._get_spatial_zones(bbox2, frame_width, frame_height)
+                
+                if zones1 & zones2:
+                    overlap = self._bbox_overlap_ratio(bbox1, bbox2)
+                    if overlap > self.overlap_threshold:
+                        return True
+        
         return False
     
     def _bbox_overlap_ratio(self, bbox1: List[int], bbox2: List[int]) -> float:
@@ -84,12 +110,15 @@ class ConflictResolver:
         
         placements = []
         
-        for tube in tubes_sorted:
+        print(f"  Target duration: {target_duration} frames")
+        for idx, tube in enumerate(tubes_sorted):
+            print(f"  Placing tube {idx+1}/{len(tubes_sorted)} (duration: {len(tube.bboxes)} frames)...", end='\r')
             best_time = self._find_best_placement(tube, placements, target_duration,
                                                   frame_width, frame_height)
             if best_time is not None:
                 placements.append((tube, best_time))
         
+        print(f"  Placed {len(placements)}/{len(tubes_sorted)} tubes" + " " * 30)
         return placements
     
     def _find_best_placement(self, tube: Tube, 

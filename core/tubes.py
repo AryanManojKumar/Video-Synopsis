@@ -11,6 +11,7 @@ class Tube:
     end_frame: int
     bboxes: List[List[int]]
     frames: List[np.ndarray]
+    _spatial_bounds: tuple = None
     
     @property
     def duration(self):
@@ -24,6 +25,20 @@ class Tube:
             cy = (bbox[1] + bbox[3]) / 2
             centers.append((cx, cy))
         return centers
+    
+    @property
+    def spatial_bounds(self):
+        """Get overall bounding box covering entire trajectory"""
+        if self._spatial_bounds is None:
+            if not self.bboxes:
+                self._spatial_bounds = (0, 0, 0, 0)
+            else:
+                x_min = min(bbox[0] for bbox in self.bboxes)
+                y_min = min(bbox[1] for bbox in self.bboxes)
+                x_max = max(bbox[2] for bbox in self.bboxes)
+                y_max = max(bbox[3] for bbox in self.bboxes)
+                self._spatial_bounds = (x_min, y_min, x_max, y_max)
+        return self._spatial_bounds
 
 class TubeGenerator:
     def __init__(self):
