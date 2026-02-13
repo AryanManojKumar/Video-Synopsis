@@ -7,9 +7,19 @@ def download_yolo_models():
     
     print("Downloading YOLOv8 models...")
     
-    model_variants = ['yolov8n.pt', 'yolov8s.pt', 'yolov8m.pt']
+    # Detection models
+    detection_models = ['yolov8n.pt', 'yolov8s.pt', 'yolov8m.pt']
     
-    for variant in model_variants:
+    for variant in detection_models:
+        print(f"Downloading {variant}...")
+        model = YOLO(variant)
+        print(f"{variant} downloaded successfully")
+    
+    # Segmentation models
+    print("\nDownloading YOLOv8 segmentation models...")
+    seg_models = ['yolov8n-seg.pt', 'yolov8s-seg.pt']
+    
+    for variant in seg_models:
         print(f"Downloading {variant}...")
         model = YOLO(variant)
         print(f"{variant} downloaded successfully")

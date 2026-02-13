@@ -11,6 +11,7 @@ class Tube:
     end_frame: int
     bboxes: List[List[int]]
     frames: List[np.ndarray]
+    masks: List[np.ndarray] = None  # Binary segmentation masks, one per frame
     _spatial_bounds: tuple = None
     
     @property
@@ -63,11 +64,13 @@ class TubeGenerator:
                         'class_name': track['class_name'],
                         'frames': [],
                         'bboxes': [],
+                        'masks': [],
                         'frame_indices': []
                     }
                 
                 track_data[tid]['frames'].append(video_frames[frame_idx])
                 track_data[tid]['bboxes'].append(track['bbox'])
+                track_data[tid]['masks'].append(track.get('mask'))
                 track_data[tid]['frame_indices'].append(frame_idx)
         
         tubes = []
@@ -75,13 +78,17 @@ class TubeGenerator:
             if len(data['frames']) < self.min_duration:
                 continue
             
+            # Check if any masks exist for this tube
+            has_masks = any(m is not None for m in data['masks'])
+            
             tube = Tube(
                 track_id=tid,
                 class_name=data['class_name'],
                 start_frame=data['frame_indices'][0],
                 end_frame=data['frame_indices'][-1],
                 bboxes=data['bboxes'],
-                frames=data['frames']
+                frames=data['frames'],
+                masks=data['masks'] if has_masks else None
             )
             tubes.append(tube)
         
@@ -184,7 +191,8 @@ class TubeGenerator:
                 start_frame=tube.start_frame,
                 end_frame=tube.start_frame + trim_end - 1,
                 bboxes=tube.bboxes[:trim_end],
-                frames=tube.frames[:trim_end]
+                frames=tube.frames[:trim_end],
+                masks=tube.masks[:trim_end] if tube.masks else None
             )
         
         return tube
@@ -222,7 +230,8 @@ class TubeGenerator:
                 start_frame=tube.start_frame + best_start,
                 end_frame=tube.start_frame + end - 1,
                 bboxes=tube.bboxes[best_start:end],
-                frames=tube.frames[best_start:end]
+                frames=tube.frames[best_start:end],
+                masks=tube.masks[best_start:end] if tube.masks else None
             ))
         
         return capped

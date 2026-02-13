@@ -43,7 +43,7 @@ def process_video_synopsis(self, job_id: str, video_path: str,
         job.progress = 30.0
         db.commit()
         
-        detector = ObjectDetector()
+        detector = ObjectDetector()  # Reads use_segmentation from settings
         tracker = MultiObjectTracker()
         
         tracks_per_frame = []

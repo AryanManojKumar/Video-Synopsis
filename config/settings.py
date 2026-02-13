@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     max_tube_length: int = 300  # Max frames per tube (10s at 30fps)
     min_motion_threshold: float = 0.08  # Min displacement/object-size ratio to be considered "moving"
     
+    # Segmentation configs
+    use_segmentation: bool = True
+    seg_model: str = "yolov8n-seg"  # Model variant for segmentation
+    feather_edges: bool = True  # Soften mask edges via Gaussian blur
+    feather_radius: int = 3  # Gaussian blur kernel size for edge feathering
+    
     class Config:
         env_file = ".env"
         extra = "ignore"

@@ -7,7 +7,7 @@ from config import settings
 class Track:
     count = 0
     
-    def __init__(self, bbox, class_id, class_name):
+    def __init__(self, bbox, class_id, class_name, mask=None):
         self.id = Track.count
         Track.count += 1
         self.kf = self._init_kalman(bbox)
@@ -17,6 +17,7 @@ class Track:
         self.age = 0
         self.time_since_update = 0
         self.history = []
+        self.mask = mask  # Latest segmentation mask
         
     def _init_kalman(self, bbox):
         kf = KalmanFilter(dim_x=7, dim_z=4)
@@ -57,11 +58,13 @@ class Track:
         self.time_since_update += 1
         return self._z_to_bbox(self.kf.x[:4])
     
-    def update(self, bbox):
+    def update(self, bbox, mask=None):
         self.time_since_update = 0
         self.hits += 1
         self.kf.update(self._bbox_to_z(bbox))
         self.history.append(bbox)
+        if mask is not None:
+            self.mask = mask
 
 class MultiObjectTracker:
     def __init__(self):
@@ -107,13 +110,13 @@ class MultiObjectTracker:
                 unmatched_tracks.add(t)
                 unmatched_dets.add(d)
             else:
-                self.tracks[t].update(detections[d]['bbox'])
+                self.tracks[t].update(detections[d]['bbox'], detections[d].get('mask'))
                 unmatched_tracks.discard(t)
                 unmatched_dets.discard(d)
         
         for d in unmatched_dets:
             det = detections[d]
-            self.tracks.append(Track(det['bbox'], det['class_id'], det['class_name']))
+            self.tracks.append(Track(det['bbox'], det['class_id'], det['class_name'], det.get('mask')))
         
         self.tracks = [t for t in self.tracks if t.time_since_update < self.max_age]
         
@@ -129,6 +132,7 @@ class MultiObjectTracker:
                     'bbox': [int(x) for x in bbox],
                     'class_id': track.class_id,
                     'class_name': track.class_name,
-                    'hits': track.hits
+                    'hits': track.hits,
+                    'mask': track.mask
                 })
         return active

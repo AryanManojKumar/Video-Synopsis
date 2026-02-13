@@ -12,7 +12,8 @@ from utils.video import VideoProcessor
 def process_video_synopsis(video_path: str, output_path: str, 
                           compression_ratio: float = 0.3,
                           use_genetic: bool = False,
-                          add_metadata: bool = True):
+                          add_metadata: bool = True,
+                          use_segmentation: bool = True):
     print(f"Processing video: {video_path}")
     
     print("Step 1/6: Loading video...")
@@ -39,8 +40,9 @@ def process_video_synopsis(video_path: str, output_path: str,
     bg_extractor = BackgroundExtractor()
     background = bg_extractor.extract_from_frames(frames[::30])
     
-    print("Step 3/6: Detecting and tracking objects...")
-    detector = ObjectDetector()
+    seg_mode = "segmentation" if use_segmentation else "bbox-only"
+    print(f"Step 3/6: Detecting and tracking objects ({seg_mode} mode)...")
+    detector = ObjectDetector(use_segmentation=use_segmentation)
     tracker = MultiObjectTracker()
     
     tracks_per_frame = []
@@ -115,6 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--compression", type=float, default=0.3, help="Compression ratio (0-1)")
     parser.add_argument("-g", "--genetic", action="store_true", help="Use genetic algorithm")
     parser.add_argument("--no-metadata", action="store_true", help="Disable metadata overlay")
+    parser.add_argument("--no-segmentation", action="store_true", help="Disable segmentation (use bbox-only mode)")
     
     args = parser.parse_args()
     
@@ -127,5 +130,6 @@ if __name__ == "__main__":
         args.output,
         args.compression,
         args.genetic,
-        not args.no_metadata
+        not args.no_metadata,
+        not args.no_segmentation
     )
