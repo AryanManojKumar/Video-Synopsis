@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     
     # Synopsis configs
     compression_ratio: float = 0.3
-    min_object_duration: int = 30
+    min_object_duration: int = 15
     max_synopsis_duration: int = 300
+    
+    # Tube filtering configs
+    max_tube_length: int = 300  # Max frames per tube (10s at 30fps)
+    min_motion_threshold: float = 0.08  # Min displacement/object-size ratio to be considered "moving"
     
     class Config:
         env_file = ".env"

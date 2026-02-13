@@ -17,6 +17,17 @@ class SynopsisRenderer:
         max_frame = max([start_time + len(tube.bboxes) 
                         for tube, start_time in placements])
         
+        # Trim trailing dead frames: find last frame with active tube activity
+        last_active_frame = 0
+        for tube, start_time in placements:
+            tube_end = start_time + len(tube.bboxes)
+            if tube_end > last_active_frame:
+                last_active_frame = tube_end
+        
+        # Add 1-second buffer after last activity, but don't exceed original max
+        buffer_frames = self.fps
+        max_frame = min(max_frame, last_active_frame + buffer_frames)
+        
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, self.fps, 
                              (self.width, self.height))

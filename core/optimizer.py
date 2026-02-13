@@ -131,18 +131,29 @@ class ConflictResolver:
         if tube_duration > max_duration:
             max_duration = tube_duration * 2
         
+        # Track least-colliding slot as fallback
+        best_fallback_time = 0
+        min_collisions = float('inf')
+        
         for time in range(0, max(1, max_duration - tube_duration + 1)):
-            has_collision = False
+            collision_count = 0
             for existing_tube, existing_time in existing_placements:
                 if self._check_collision(tube, time, existing_tube, existing_time,
                                         frame_width, frame_height):
-                    has_collision = True
-                    break
+                    collision_count += 1
             
-            if not has_collision:
+            # No collisions — perfect slot
+            if collision_count == 0:
                 return time
+            
+            # Track the least-colliding slot
+            if collision_count < min_collisions:
+                min_collisions = collision_count
+                best_fallback_time = time
         
-        return 0
+        # No collision-free slot found — use the least-colliding one
+        # This spreads tubes across the timeline instead of piling at t=0
+        return best_fallback_time
     
     def optimize_genetic(self, tubes: List[Tube], 
                         original_duration: int,

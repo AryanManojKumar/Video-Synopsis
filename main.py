@@ -55,7 +55,18 @@ def process_video_synopsis(video_path: str, output_path: str,
     print(f"Step 4/6: Generating tubes...")
     tube_gen = TubeGenerator()
     tubes = tube_gen.generate_tubes(tracks_per_frame, frames)
-    print(f"Generated {len(tubes)} tubes")
+    stats = tube_gen.filter_stats
+    print(f"Generated {stats['total']} raw tubes → {len(tubes)} after filtering")
+    if stats['stationary_removed'] > 0:
+        print(f"  Removed {stats['stationary_removed']} stationary tubes:")
+        for detail in stats.get('removed_details', []):
+            print(f"    - Track #{detail['track_id']} ({detail['class']}, "
+                  f"{detail['duration']} frames, motion={detail['motion_score']}, "
+                  f"threshold={detail['threshold']})")
+    if stats['trimmed'] > 0:
+        print(f"  Trimmed trailing stillness from {stats['trimmed']} tubes")
+    if stats['capped'] > 0:
+        print(f"  Capped {stats['capped']} tubes to max length")
     
     if len(tubes) == 0:
         print("Warning: No objects tracked long enough. Try lowering min_object_duration.")
