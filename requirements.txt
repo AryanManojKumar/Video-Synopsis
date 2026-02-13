@@ -1,0 +1,27 @@
+# Core dependencies
+opencv-python
+torch>=2.6.0
+torchvision
+ultralytics
+numpy
+pillow
+pydantic
+pydantic-settings
+python-dotenv
+filterpy
+scipy
+
+# Optional API dependencies
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
+
+# Optional cloud/worker dependencies
+celery
+redis
+psycopg2-binary
+sqlalchemy
+alembic
+boto3
+prometheus-client

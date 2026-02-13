@@ -1,0 +1,11 @@
+opencv-python
+torch>=2.6.0
+torchvision
+ultralytics
+numpy
+pillow
+pydantic
+pydantic-settings
+python-dotenv
+filterpy
+scipy
