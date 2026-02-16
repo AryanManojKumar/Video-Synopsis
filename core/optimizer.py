@@ -249,14 +249,19 @@ class SpatialLaneOptimizer:
         print("=" * 72)
         
         # ── Per-tube table ──
-        print(f"\n  {'#':<4} {'Track':<8} {'Class':<12} {'Start':>7} {'End':>7} {'Dur':>5} {'Time(s)':>8}")
-        print("  " + "─" * 55)
+        print(f"\n  {'#':<4} {'Track':<8} {'Class':<12} {'Original':<16} {'Synopsis':<16} {'Dur':>5}")
+        print("  " + "─" * 65)
         
         for i, (tube, start) in enumerate(sorted_p):
             end = start + tube.duration
-            time_str = f"{start / fps:.1f}-{end / fps:.1f}s"
+            # Original timeframe in source video
+            orig_from = tube.start_frame / fps
+            orig_to = tube.end_frame / fps
+            orig_str = f"{orig_from:.1f}s → {orig_to:.1f}s"
+            # Synopsis timeframe in output video
+            syn_str = f"{start / fps:.1f}s → {end / fps:.1f}s"
             print(f"  {i+1:<4} #{tube.track_id:<6} {tube.class_name:<12} "
-                  f"{start:>7} {end:>7} {tube.duration:>5} {time_str:>8}")
+                  f"{orig_str:<16} {syn_str:<16} {tube.duration:>5}")
         
         # ── ASCII Timeline ──
         print(f"\n  Timeline (each █ ≈ {max(1, max_frame // 60)} frames):")
