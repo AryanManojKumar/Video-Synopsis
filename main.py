@@ -5,14 +5,14 @@ from core.detector import ObjectDetector
 from core.tracker import MultiObjectTracker
 from core.background import BackgroundExtractor
 from core.tubes import TubeGenerator
-from core.optimizer import ConflictResolver
+from core.optimizer import SpatialLaneOptimizer
 from core.renderer import SynopsisRenderer
 from utils.video import VideoProcessor
 
 def process_video_synopsis(video_path: str, output_path: str, 
                           compression_ratio: float = 0.3,
-                          use_genetic: bool = False,
-                          add_metadata: bool = True):
+                          add_metadata: bool = True,
+                          use_segmentation: bool = True):
     print(f"Processing video: {video_path}")
     
     print("Step 1/6: Loading video...")
@@ -39,8 +39,9 @@ def process_video_synopsis(video_path: str, output_path: str,
     bg_extractor = BackgroundExtractor()
     background = bg_extractor.extract_from_frames(frames[::30])
     
-    print("Step 3/6: Detecting and tracking objects...")
-    detector = ObjectDetector()
+    seg_mode = "segmentation" if use_segmentation else "bbox-only"
+    print(f"Step 3/6: Detecting and tracking objects ({seg_mode} mode)...")
+    detector = ObjectDetector(use_segmentation=use_segmentation)
     tracker = MultiObjectTracker()
     
     tracks_per_frame = []
@@ -82,21 +83,18 @@ def process_video_synopsis(video_path: str, output_path: str,
         return
     
     print("Step 5/6: Optimizing placement...")
-    resolver = ConflictResolver(grid_size=(3, 3), overlap_threshold=0.3)
-    resolver.compression_ratio = compression_ratio
+    optimizer = SpatialLaneOptimizer(overlap_threshold=0.3)
+    optimizer.compression_ratio = compression_ratio
     
-    if use_genetic:
-        print("  Using genetic algorithm with spatial zones...")
-        placements = resolver.optimize_genetic(tubes, len(frames), width, height)
-    else:
-        print("  Using greedy algorithm with spatial zones...")
-        placements = resolver.optimize_placement(tubes, len(frames), width, height)
-    
-    print(f"Placed {len(placements)} objects")
+    print("  Using spatial-lane deterministic optimizer...")
+    placements = optimizer.optimize(tubes, len(frames), width, height)
     
     print("Step 6/6: Rendering synopsis...")
     renderer = SynopsisRenderer(background, fps)
     renderer.render(placements, output_path, add_metadata=add_metadata)
+    
+    # Print human-readable layout summary
+    optimizer.print_summary(placements, fps, len(frames))
     
     original_duration = len(frames) / fps
     synopsis_duration = max([start + tube.duration for tube, start in placements]) / fps if placements else 0
@@ -113,8 +111,8 @@ if __name__ == "__main__":
     parser.add_argument("input", help="Input video path")
     parser.add_argument("-o", "--output", default="synopsis.mp4", help="Output video path")
     parser.add_argument("-c", "--compression", type=float, default=0.3, help="Compression ratio (0-1)")
-    parser.add_argument("-g", "--genetic", action="store_true", help="Use genetic algorithm")
     parser.add_argument("--no-metadata", action="store_true", help="Disable metadata overlay")
+    parser.add_argument("--no-segmentation", action="store_true", help="Disable segmentation (use bbox-only mode)")
     
     args = parser.parse_args()
     
@@ -126,6 +124,6 @@ if __name__ == "__main__":
         args.input,
         args.output,
         args.compression,
-        args.genetic,
-        not args.no_metadata
+        not args.no_metadata,
+        not args.no_segmentation
     )

@@ -3,7 +3,6 @@ from typing import Optional
 
 class SynopsisRequest(BaseModel):
     compression_ratio: float = 0.3
-    use_genetic: bool = False
     min_object_duration: int = 30
 
 class SynopsisResponse(BaseModel):

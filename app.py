@@ -19,8 +19,7 @@ async def root():
 @app.post("/synopsis")
 async def create_synopsis(
     file: UploadFile = File(...),
-    compression_ratio: float = 0.3,
-    use_genetic: bool = False
+    compression_ratio: float = 0.3
 ):
     if not file.filename.endswith(('.mp4', '.avi', '.mov')):
         raise HTTPException(400, "Invalid video format. Use .mp4, .avi, or .mov")
@@ -37,7 +36,6 @@ async def create_synopsis(
             str(input_path),
             str(output_path),
             compression_ratio,
-            use_genetic,
             add_metadata=True
         )
         
