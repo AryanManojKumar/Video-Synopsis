@@ -3,7 +3,7 @@ from core.detector import ObjectDetector
 from core.tracker import MultiObjectTracker
 from core.background import BackgroundExtractor
 from core.tubes import TubeGenerator
-from core.optimizer import ConflictResolver
+from core.optimizer import SpatialLaneOptimizer
 from core.renderer import SynopsisRenderer
 from utils.video import VideoProcessor
 from utils.storage import upload_to_s3, download_from_s3
@@ -13,7 +13,7 @@ import cv2
 
 @celery_app.task(bind=True)
 def process_video_synopsis(self, job_id: str, video_path: str, 
-                          compression_ratio: float, use_genetic: bool):
+                          compression_ratio: float):
     db = next(get_db())
     job = db.query(Job).filter(Job.id == job_id).first()
     
@@ -69,11 +69,9 @@ def process_video_synopsis(self, job_id: str, video_path: str,
         job.progress = 70.0
         db.commit()
         
-        resolver = ConflictResolver()
-        if use_genetic:
-            placements = resolver.optimize_genetic(tubes, len(frames))
-        else:
-            placements = resolver.optimize_placement(tubes, len(frames))
+        optimizer = SpatialLaneOptimizer()
+        optimizer.compression_ratio = compression_ratio
+        placements = optimizer.optimize(tubes, len(frames))
         
         self.update_state(state='PROGRESS', meta={'progress': 85})
         job.progress = 85.0

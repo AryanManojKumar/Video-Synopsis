@@ -10,8 +10,7 @@ router = APIRouter()
 @router.post("/synopsis", response_model=SynopsisResponse)
 async def create_synopsis(
     file: UploadFile = File(...),
-    compression_ratio: float = 0.3,
-    use_genetic: bool = False
+    compression_ratio: float = 0.3
 ):
     if not file.filename.endswith(('.mp4', '.avi', '.mov')):
         raise HTTPException(400, "Invalid video format")
@@ -25,8 +24,7 @@ async def create_synopsis(
     task = process_video_synopsis.delay(
         job_id=job_id,
         video_path=video_path,
-        compression_ratio=compression_ratio,
-        use_genetic=use_genetic
+        compression_ratio=compression_ratio
     )
     
     return SynopsisResponse(

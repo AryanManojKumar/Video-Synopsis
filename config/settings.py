@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     compression_ratio: float = 0.3
     min_object_duration: int = 15
     max_synopsis_duration: int = 300
+    num_spatial_lanes: int = 5  # Number of spatial lanes for layout scheduling
     
     # Tube filtering configs
     max_tube_length: int = 300  # Max frames per tube (10s at 30fps)
