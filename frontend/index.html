@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Synopsis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- ── Nav ── -->
+    <nav class="nav">
+        <div class="nav-brand">
+            <div class="logo">▶</div>
+            Video Synopsis
+        </div>
+        <div class="nav-stats hidden" id="navStats"></div>
+    </nav>
+
+    <!-- ── Screen 1: Upload ── -->
+    <div class="screen upload-screen" id="screenUpload">
+        <div class="upload-hero">
+            <h1>Compress hours into<br>minutes of activity</h1>
+            <p>Upload a surveillance video and get an intelligent synopsis — all activities condensed into a single
+                short clip.</p>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">🎬</div>
+            <div class="drop-label">Drop your video here</div>
+            <div class="drop-sublabel">MP4, AVI, or MOV — any resolution</div>
+            <div class="drop-file-info" id="fileInfo"></div>
+        </div>
+        <input type="file" id="fileInput" accept="video/mp4,video/avi,video/quicktime,.mp4,.avi,.mov"
+            style="display:none">
+
+        <div class="controls-row">
+            <div class="control-group">
+                <label>Compression</label>
+                <input type="range" id="compressionSlider" min="0.1" max="1.0" step="0.05" value="0.3">
+                <span class="range-val" id="compressionVal">0.3</span>
+            </div>
+            <button class="btn-primary" id="btnGenerate" disabled>Generate Synopsis</button>
+        </div>
+    </div>
+
+    <!-- ── Screen 2: Processing ── -->
+    <div class="screen processing-screen hidden" id="screenProcessing">
+        <div class="processing-card">
+            <div class="spinner"></div>
+            <div class="processing-title">Generating Synopsis</div>
+            <div class="processing-status" id="processingStatus">Uploading video…</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Screen 3: Results ── -->
+    <div class="screen results-screen hidden" id="screenResults">
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <div class="video-section">
+            <div class="video-panel">
+                <div class="video-panel-header">
+                    <span class="video-tag tag-synopsis">Synopsis</span>
+                    <span class="video-time" id="synTime">0:00.0</span>
+                </div>
+                <video id="videoSynopsis" controls preload="metadata"></video>
+            </div>
+            <div class="video-panel">
+                <div class="video-panel-header">
+                    <span class="video-tag tag-original">Original</span>
+                    <span class="video-time" id="origTime">0:00.0</span>
+                </div>
+                <video id="videoOriginal" controls preload="metadata"></video>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <div class="table-card-header">
+                <h3>Activity Timeline</h3>
+                <span class="hint">Click any row to seek • click timestamps for individual videos</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Track</th>
+                            <th>Class</th>
+                            <th>Original</th>
+                            <th>Synopsis</th>
+                            <th>Duration</th>
+                            <th>Timeline</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tubeTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="actions-row">
+            <a class="btn-download" id="btnDownload" download>
+                ⬇ Download Synopsis
+            </a>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

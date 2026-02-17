@@ -294,6 +294,43 @@ class SpatialLaneOptimizer:
         print(f"  Objects  : {len(placements)} tubes placed")
         print("=" * 72 + "\n")
 
+    def get_summary_data(self, placements: List[Tuple[Tube, int]],
+                         fps: int, original_duration_frames: int) -> dict:
+        """
+        Return the synopsis layout as a structured dict for JSON export.
+        """
+        if not placements:
+            return {"tubes": [], "original_duration": 0, "synopsis_duration": 0,
+                    "compression_ratio": 0, "total_tubes": 0}
+        
+        sorted_p = sorted(placements, key=lambda x: x[1])
+        max_frame = max(t + tube.duration for tube, t in sorted_p)
+        
+        original_sec = original_duration_frames / fps
+        synopsis_sec = max_frame / fps
+        
+        tubes_data = []
+        for tube, start in sorted_p:
+            end = start + tube.duration
+            tubes_data.append({
+                "track_id": tube.track_id,
+                "class_name": tube.class_name,
+                "original_from": round(tube.start_frame / fps, 2),
+                "original_to": round(tube.end_frame / fps, 2),
+                "synopsis_from": round(start / fps, 2),
+                "synopsis_to": round(end / fps, 2),
+                "duration_frames": tube.duration
+            })
+        
+        return {
+            "original_duration": round(original_sec, 2),
+            "synopsis_duration": round(synopsis_sec, 2),
+            "compression_ratio": round(synopsis_sec / original_sec, 4) if original_sec > 0 else 0,
+            "total_tubes": len(placements),
+            "fps": fps,
+            "tubes": tubes_data
+        }
+
 
 # ── Backward-compatible alias ─────────────────────────────────────────────
 # Legacy code may import ConflictResolver; this alias prevents breakage.

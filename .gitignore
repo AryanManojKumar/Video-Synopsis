@@ -17,6 +17,11 @@ models/weights/*.pth
 *.swo
 .idea/
 .vscode/
+# Video input/output directories
+inputs/*
+!inputs/.gitkeep
+results/*
+!results/.gitkeep
 uploads/
 outputs/
 celerybeat-schedule

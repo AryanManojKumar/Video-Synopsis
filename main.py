@@ -1,4 +1,7 @@
 import cv2
+import json
+import subprocess
+import os
 import argparse
 from pathlib import Path
 from core.detector import ObjectDetector
@@ -93,8 +96,31 @@ def process_video_synopsis(video_path: str, output_path: str,
     renderer = SynopsisRenderer(background, fps)
     renderer.render(placements, output_path, add_metadata=add_metadata)
     
+    # Re-encode to H.264 for browser compatibility
+    tmp_path = output_path + ".tmp.mp4"
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", output_path, "-c:v", "libx264",
+             "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p",
+             "-movflags", "+faststart", tmp_path],
+            check=True, capture_output=True
+        )
+        os.replace(tmp_path, output_path)
+        print("  Re-encoded to H.264 (browser-compatible)")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        print("  Warning: ffmpeg not available, video may not play in browsers")
+    
     # Print human-readable layout summary
     optimizer.print_summary(placements, fps, len(frames))
+    
+    # Save structured summary as JSON sidecar
+    summary_data = optimizer.get_summary_data(placements, fps, len(frames))
+    json_path = Path(output_path).with_suffix('.mp4.json')
+    with open(json_path, 'w') as f:
+        json.dump(summary_data, f, indent=2)
+    print(f"Summary JSON saved to: {json_path}")
     
     original_duration = len(frames) / fps
     synopsis_duration = max([start + tube.duration for tube, start in placements]) / fps if placements else 0
