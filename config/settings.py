@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     
     # Model configs
     detection_conf: float = 0.5
-    tracking_max_age: int = 30
+    tracking_max_age: int = 45  # Increased from 30 for better occlusion handling
     tracking_min_hits: int = 3
     iou_threshold: float = 0.3
     
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # Tube filtering configs
     max_tube_length: int = 300  # Max frames per tube (10s at 30fps)
     min_motion_threshold: float = 0.08  # Min displacement/object-size ratio to be considered "moving"
+    max_gap_fill: int = 15  # Max missing frames to interpolate (0.5s at 30fps)
+    group_merge_distance: float = 2.0  # Spatial proximity threshold (multiples of avg object diagonal)
     
     # Segmentation configs
     use_segmentation: bool = True

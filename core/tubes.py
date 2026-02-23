@@ -1,7 +1,8 @@
 import numpy as np
 from typing import List, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from config import settings
+
 
 @dataclass
 class Tube:
@@ -41,12 +42,106 @@ class Tube:
                 self._spatial_bounds = (x_min, y_min, x_max, y_max)
         return self._spatial_bounds
 
+
+@dataclass
+class GroupTube:
+    """
+    A virtual tube that wraps multiple co-located tubes into a single activity.
+    The optimizer treats it as one unit; the renderer composites all sub-tubes.
+    """
+    group_id: int
+    sub_tubes: List[Tube]
+    # Unified bounding box covering all sub-tubes each frame
+    bboxes: List[List[int]] = field(default_factory=list)
+    frames: List[np.ndarray] = field(default_factory=list)
+    masks: List = field(default_factory=list)
+    start_frame: int = 0
+    end_frame: int = 0
+    class_name: str = "group"
+    track_id: int = -1
+    _spatial_bounds: tuple = None
+
+    def __post_init__(self):
+        if self.sub_tubes:
+            self.start_frame = min(t.start_frame for t in self.sub_tubes)
+            self.end_frame = max(t.end_frame for t in self.sub_tubes)
+            self.track_id = self.group_id
+            classes = set(t.class_name for t in self.sub_tubes)
+            self.class_name = f"group({','.join(sorted(classes))})"
+            self._build_unified_data()
+
+    def _build_unified_data(self):
+        """Build frame-aligned data spanning from start_frame to end_frame."""
+        total_frames = self.end_frame - self.start_frame + 1
+        self.bboxes = []
+        self.frames = []
+        self.masks = [None] * total_frames
+
+        for f_idx in range(total_frames):
+            global_frame = self.start_frame + f_idx
+            x1_min, y1_min = float('inf'), float('inf')
+            x2_max, y2_max = 0, 0
+            found_any = False
+            ref_frame = None
+
+            for tube in self.sub_tubes:
+                local = global_frame - tube.start_frame
+                if 0 <= local < tube.duration:
+                    bbox = tube.bboxes[local]
+                    x1_min = min(x1_min, bbox[0])
+                    y1_min = min(y1_min, bbox[1])
+                    x2_max = max(x2_max, bbox[2])
+                    y2_max = max(y2_max, bbox[3])
+                    found_any = True
+                    if ref_frame is None:
+                        ref_frame = tube.frames[local]
+
+            if found_any:
+                self.bboxes.append([int(x1_min), int(y1_min), int(x2_max), int(y2_max)])
+                self.frames.append(ref_frame)
+            else:
+                # Gap frame — use previous or next available
+                prev_bbox = self.bboxes[-1] if self.bboxes else [0, 0, 1, 1]
+                prev_frame = self.frames[-1] if self.frames else np.zeros((1, 1, 3), dtype=np.uint8)
+                self.bboxes.append(prev_bbox)
+                self.frames.append(prev_frame)
+
+    @property
+    def duration(self):
+        return len(self.bboxes)
+
+    @property
+    def center_trajectory(self):
+        return [((b[0]+b[2])/2, (b[1]+b[3])/2) for b in self.bboxes]
+
+    @property
+    def spatial_bounds(self):
+        if self._spatial_bounds is None:
+            if not self.bboxes:
+                self._spatial_bounds = (0, 0, 0, 0)
+            else:
+                self._spatial_bounds = (
+                    min(b[0] for b in self.bboxes),
+                    min(b[1] for b in self.bboxes),
+                    max(b[2] for b in self.bboxes),
+                    max(b[3] for b in self.bboxes),
+                )
+        return self._spatial_bounds
+
+
 class TubeGenerator:
+    _group_counter = 1000  # Start group IDs above normal track IDs
+
     def __init__(self):
         self.min_duration = settings.min_object_duration
         self.max_tube_length = settings.max_tube_length
         self.min_motion_threshold = settings.min_motion_threshold
-        self._stats = {'total': 0, 'stationary_removed': 0, 'capped': 0, 'trimmed': 0}
+        self.max_gap_fill = getattr(settings, 'max_gap_fill', 15)
+        self.group_merge_distance = getattr(settings, 'group_merge_distance', 2.0)
+        self._stats = {
+            'total': 0, 'stationary_removed': 0, 'capped': 0,
+            'trimmed': 0, 'gaps_filled': 0, 'groups_merged': 0,
+        }
         
     @property
     def filter_stats(self):
@@ -78,30 +173,189 @@ class TubeGenerator:
             if len(data['frames']) < self.min_duration:
                 continue
             
+            # Fill gaps before creating the tube
+            filled = self._fill_frame_gaps(data, video_frames)
+            
             # Check if any masks exist for this tube
-            has_masks = any(m is not None for m in data['masks'])
+            has_masks = any(m is not None for m in filled['masks'])
             
             tube = Tube(
                 track_id=tid,
-                class_name=data['class_name'],
-                start_frame=data['frame_indices'][0],
-                end_frame=data['frame_indices'][-1],
-                bboxes=data['bboxes'],
-                frames=data['frames'],
-                masks=data['masks'] if has_masks else None
+                class_name=filled['class_name'],
+                start_frame=filled['frame_indices'][0],
+                end_frame=filled['frame_indices'][-1],
+                bboxes=filled['bboxes'],
+                frames=filled['frames'],
+                masks=filled['masks'] if has_masks else None
             )
             tubes.append(tube)
         
         self._stats['total'] = len(tubes)
         
-        # Post-processing: filter and trim tubes
+        # Post-processing: filter, trim, cap, then merge groups
         tubes = self._filter_stationary(tubes)
         tubes = [self._trim_trailing_stillness(t) for t in tubes]
-        # Re-filter after trimming (some may be too short now)
         tubes = [t for t in tubes if t.duration >= self.min_duration]
         tubes = self._cap_tube_lengths(tubes)
         
+        # Merge co-located tubes into groups
+        tubes = self._merge_co_located_tubes(tubes)
+        
         return tubes
+
+    # ── Gap Filling ────────────────────────────────────────────────────────
+
+    def _fill_frame_gaps(self, track_data: dict, video_frames: List[np.ndarray]) -> dict:
+        """
+        Fill small gaps in a track's frame sequence by interpolating bboxes
+        and pulling the actual video frame for those missing indices.
+        """
+        indices = track_data['frame_indices']
+        if len(indices) < 2:
+            return track_data
+
+        new_frames = []
+        new_bboxes = []
+        new_masks = []
+        new_indices = []
+        gaps_filled_here = 0
+
+        for i in range(len(indices)):
+            # Add existing data point
+            new_frames.append(track_data['frames'][i])
+            new_bboxes.append(track_data['bboxes'][i])
+            new_masks.append(track_data['masks'][i])
+            new_indices.append(indices[i])
+
+            # Check for gap to next frame
+            if i < len(indices) - 1:
+                gap_size = indices[i + 1] - indices[i] - 1
+                if 0 < gap_size <= self.max_gap_fill:
+                    # Interpolate across the gap
+                    bbox_start = track_data['bboxes'][i]
+                    bbox_end = track_data['bboxes'][i + 1]
+
+                    for g in range(1, gap_size + 1):
+                        alpha = g / (gap_size + 1)
+                        interp_bbox = [
+                            int(bbox_start[0] + alpha * (bbox_end[0] - bbox_start[0])),
+                            int(bbox_start[1] + alpha * (bbox_end[1] - bbox_start[1])),
+                            int(bbox_start[2] + alpha * (bbox_end[2] - bbox_start[2])),
+                            int(bbox_start[3] + alpha * (bbox_end[3] - bbox_start[3])),
+                        ]
+                        fill_idx = indices[i] + g
+                        # Pull the actual video frame for this index
+                        if fill_idx < len(video_frames):
+                            new_frames.append(video_frames[fill_idx])
+                        else:
+                            new_frames.append(track_data['frames'][i])
+                        new_bboxes.append(interp_bbox)
+                        new_masks.append(None)  # No mask for interpolated frames
+                        new_indices.append(fill_idx)
+                        gaps_filled_here += 1
+
+        if gaps_filled_here > 0:
+            self._stats['gaps_filled'] += gaps_filled_here
+
+        return {
+            'class_name': track_data['class_name'],
+            'frames': new_frames,
+            'bboxes': new_bboxes,
+            'masks': new_masks,
+            'frame_indices': new_indices,
+        }
+
+    # ── Group Merging ──────────────────────────────────────────────────────
+
+    def _merge_co_located_tubes(self, tubes: List[Tube]) -> list:
+        """
+        Merge tubes that overlap temporally AND are spatially close into GroupTubes.
+        A group of people walking together becomes one unit in the synopsis.
+        """
+        if len(tubes) < 2:
+            return tubes
+
+        n = len(tubes)
+        merged_into = list(range(n))  # Union-Find parent array
+
+        def find(x):
+            while merged_into[x] != x:
+                merged_into[x] = merged_into[merged_into[x]]
+                x = merged_into[x]
+            return x
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                merged_into[rb] = ra
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                if self._should_merge(tubes[i], tubes[j]):
+                    union(i, j)
+
+        # Group tubes by their root
+        groups: Dict[int, List[int]] = {}
+        for i in range(n):
+            root = find(i)
+            groups.setdefault(root, []).append(i)
+
+        result = []
+        groups_formed = 0
+        for root, members in groups.items():
+            if len(members) == 1:
+                result.append(tubes[members[0]])
+            else:
+                group_id = TubeGenerator._group_counter
+                TubeGenerator._group_counter += 1
+                sub_tubes = [tubes[m] for m in members]
+                gt = GroupTube(group_id=group_id, sub_tubes=sub_tubes)
+                result.append(gt)
+                groups_formed += 1
+
+        if groups_formed > 0:
+            self._stats['groups_merged'] = groups_formed
+            print(f"  Merged {sum(len(g) for g in groups.values() if len(g) > 1)} tubes "
+                  f"into {groups_formed} group(s)")
+
+        return result
+
+    def _should_merge(self, t1: Tube, t2: Tube) -> bool:
+        """Check if two tubes should be merged (temporal overlap + spatial proximity)."""
+        # Temporal overlap check — require ≥50% overlap
+        overlap_start = max(t1.start_frame, t2.start_frame)
+        overlap_end = min(t1.end_frame, t2.end_frame)
+        overlap = max(0, overlap_end - overlap_start)
+        
+        shorter_duration = min(t1.end_frame - t1.start_frame, t2.end_frame - t2.start_frame)
+        if shorter_duration <= 0 or overlap / shorter_duration < 0.5:
+            return False
+
+        # Spatial proximity check — average distance between centers
+        avg_diag = (self._get_object_diagonal(t1) + self._get_object_diagonal(t2)) / 2
+        threshold = avg_diag * self.group_merge_distance
+
+        # Sample centers at overlap frames
+        distances = []
+        sample_step = max(1, overlap // 10)
+        for f in range(overlap_start, overlap_end, sample_step):
+            idx1 = f - t1.start_frame
+            idx2 = f - t2.start_frame
+            if 0 <= idx1 < len(t1.bboxes) and 0 <= idx2 < len(t2.bboxes):
+                c1 = ((t1.bboxes[idx1][0] + t1.bboxes[idx1][2]) / 2,
+                       (t1.bboxes[idx1][1] + t1.bboxes[idx1][3]) / 2)
+                c2 = ((t2.bboxes[idx2][0] + t2.bboxes[idx2][2]) / 2,
+                       (t2.bboxes[idx2][1] + t2.bboxes[idx2][3]) / 2)
+                dist = ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2) ** 0.5
+                distances.append(dist)
+
+        if not distances:
+            return False
+
+        avg_distance = sum(distances) / len(distances)
+        return avg_distance < threshold
+
+    # ── Existing Methods (unchanged) ───────────────────────────────────────
     
     def _compute_displacement(self, tube: Tube) -> float:
         """Compute total center displacement across trajectory."""
@@ -116,7 +370,7 @@ class TubeGenerator:
             total += (dx**2 + dy**2) ** 0.5
         return total
     
-    def _get_object_diagonal(self, tube: Tube) -> float:
+    def _get_object_diagonal(self, tube) -> float:
         """Average diagonal size of the object across the tube."""
         diags = []
         for bbox in tube.bboxes:
@@ -132,12 +386,8 @@ class TubeGenerator:
             displacement = self._compute_displacement(tube)
             diagonal = self._get_object_diagonal(tube)
             
-            # Normalize displacement by object size and duration
-            # A truly moving object should displace at least threshold * diagonal * sqrt(duration)
             normalized_motion = displacement / (diagonal * max(1.0, len(tube.bboxes) ** 0.5))
             
-            # Be gentler on short tubes — brief appearances don't accumulate
-            # much displacement even when genuinely moving
             threshold = self.min_motion_threshold
             if len(tube.bboxes) < 60:
                 threshold *= 0.5
@@ -146,7 +396,6 @@ class TubeGenerator:
                 filtered.append(tube)
             else:
                 self._stats['stationary_removed'] += 1
-                # Log why this tube was removed for diagnostics
                 self._stats.setdefault('removed_details', []).append({
                     'track_id': tube.track_id,
                     'class': tube.class_name,
@@ -164,9 +413,8 @@ class TubeGenerator:
             return tube
         
         diagonal = self._get_object_diagonal(tube)
-        still_threshold = diagonal * 0.02  # 2% of object diagonal per frame
+        still_threshold = diagonal * 0.02
         
-        # Scan backwards to find where movement stopped
         last_moving_idx = len(centers) - 1
         for i in range(len(centers) - 1, 0, -1):
             dx = abs(centers[i][0] - centers[i-1][0])
@@ -177,10 +425,8 @@ class TubeGenerator:
                 last_moving_idx = i
                 break
         else:
-            # Entire trajectory is still — keep as-is (stationary filter handles this)
             return tube
         
-        # Add a small buffer (10 frames) after last movement
         trim_end = min(last_moving_idx + 10, len(tube.bboxes))
         
         if trim_end < len(tube.bboxes):
@@ -207,7 +453,6 @@ class TubeGenerator:
             
             self._stats['capped'] += 1
             
-            # Find the window of max_tube_length frames with the most motion
             centers = tube.center_trajectory
             best_start = 0
             best_motion = 0.0

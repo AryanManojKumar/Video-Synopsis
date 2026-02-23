@@ -71,6 +71,10 @@ def process_video_synopsis(video_path: str, output_path: str,
         print(f"  Trimmed trailing stillness from {stats['trimmed']} tubes")
     if stats['capped'] > 0:
         print(f"  Capped {stats['capped']} tubes to max length")
+    if stats.get('gaps_filled', 0) > 0:
+        print(f"  Filled {stats['gaps_filled']} frame gaps via interpolation")
+    if stats.get('groups_merged', 0) > 0:
+        print(f"  Formed {stats['groups_merged']} group(s) from co-located tubes")
     
     if len(tubes) == 0:
         print("Warning: No objects tracked long enough. Try lowering min_object_duration.")
